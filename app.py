@@ -64,7 +64,7 @@ def chat():
     user_input = data.get('message', '')
     # Always use the full rulebook
     prompt = build_dorm_prompt(user_input, dorm_rules)
-    api_key = os.environ.get('OPENAI_API_KEY', '')
+    # api_key = os.environ.get('OPENAI_API_KEY', '')
     model = 'gpt-4.1-mini-2025-04-14'
     system_prompt = "You are a helpful assistant for a student dormitory. Answer questions using the provided rules."
     try:
