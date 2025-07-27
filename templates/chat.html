@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chatbot</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f4f6fb;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+        .chat-outer {
+            box-sizing: border-box;
+            padding: 2vw;
+            width: 100vw;
+            height: 100vh;
+            background: #f4f6fb;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .chat-container {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            background: #fff;
+            border-radius: 0.75rem;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+            display: flex;
+            flex-direction: column;
+        }
+        .chat-header {
+            padding: 20px;
+            background: #4f8cff;
+            color: #fff;
+            border-radius: 16px 16px 0 0;
+            font-size: 1.3rem;
+            font-weight: 600;
+            text-align: center;
+        }
+        .chat-messages {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .message {
+            max-width: 80%;
+            padding: 12px 16px;
+            border-radius: 16px;
+            font-size: 1rem;
+            line-height: 1.4;
+        }
+        .message.user {
+            align-self: flex-end;
+            background: #e3f0ff;
+            color: #2d5dbe;
+        }
+        .message.bot {
+            align-self: flex-start;
+            background: #f0f1f7;
+            color: #333;
+        }
+        .chat-input {
+            display: flex;
+            border-top: 1px solid #eee;
+            padding: 12px;
+            background: #fafbfc;
+            border-radius: 0 0 16px 16px;
+        }
+        .chat-input input {
+            flex: 1;
+            padding: 10px 14px;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            font-size: 1rem;
+            outline: none;
+        }
+        .chat-input button {
+            margin-left: 10px;
+            padding: 10px 18px;
+            background: #4f8cff;
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .chat-input button:hover {
+            background: #2563eb;
+        }
+        @media (max-width: 600px) {
+            .chat-outer {
+                padding: 2.5vw;
+            }
+            .chat-container {
+                border-radius: 0.5rem;
+            }
+            .chat-header, .chat-input, .chat-messages {
+                padding: 12px;
+            }
+        }
+        @media (min-width: 900px) {
+            .chat-outer {
+                padding: 32px;
+            }
+            .chat-container {
+                border-radius: 1.25rem;
+            }
+            .chat-header, .chat-input {
+                font-size: 1.4rem;
+            }
+            .chat-messages {
+                font-size: 1.15rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="chat-outer">
+        <div class="chat-container">
+            <div class="chat-header">NODE GROWTH Dorm Rules Chatbot</div>
+            <div class="chat-messages" id="chat-messages">
+                <div class="message bot">寮のルールについて質問してください。例: ゴミ出しのルールは？</div>
+            </div>
+            <form class="chat-input" id="chat-form" autocomplete="off">
+                <input type="text" id="user-input" placeholder="Type your message..." required />
+                <button type="submit">Send</button>
+            </form>
+        </div>
+    </div>
+    <script>
+        const chatForm = document.getElementById('chat-form');
+        const chatMessages = document.getElementById('chat-messages');
+        const userInput = document.getElementById('user-input');
+
+        // Get current step from URL
+        function getCurrentStep() {
+            const path = window.location.pathname;
+            if (path.includes('/step1')) return 1;
+            if (path.includes('/step2')) return 2;
+            if (path.includes('/step3')) return 3;
+            if (path.includes('/step4')) return 4;
+            if (path.includes('/step5')) return 5;
+            return 1; // Default to step 1
+        }
+
+        // Function to send message and handle response
+        async function sendMessage(message) {
+            if (!message.trim()) return;
+
+            // Add user message
+            const userMsgDiv = document.createElement('div');
+            userMsgDiv.className = 'message user';
+            userMsgDiv.textContent = message;
+            chatMessages.appendChild(userMsgDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+
+            // Add loading bot message
+            const botMsgDiv = document.createElement('div');
+            botMsgDiv.className = 'message bot';
+            botMsgDiv.textContent = '...';
+            chatMessages.appendChild(botMsgDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+
+            try {
+                const response = await fetch('/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ 
+                        message: message,
+                        step: getCurrentStep()
+                    })
+                });
+                const data = await response.json();
+                
+                // Parse the AI response
+                let aiResponse;
+                try {
+                    // Clean the response - remove markdown code blocks if present
+                    let cleanResponse = data.response.trim();
+                    if (cleanResponse.startsWith('```json')) {
+                        cleanResponse = cleanResponse.substring(7); // Remove ```json
+                    }
+                    if (cleanResponse.startsWith('```')) {
+                        cleanResponse = cleanResponse.substring(3); // Remove ```
+                    }
+                    if (cleanResponse.endsWith('```')) {
+                        cleanResponse = cleanResponse.substring(0, cleanResponse.length - 3); // Remove ```
+                    }
+                    cleanResponse = cleanResponse.trim();
+                    
+                    aiResponse = JSON.parse(cleanResponse);
+                } catch (parseError) {
+                    // If it's not valid JSON, treat as plain text
+                    botMsgDiv.textContent = data.response;
+                    chatMessages.scrollTop = chatMessages.scrollHeight;
+                    return;
+                }
+
+                // Clear the loading message
+                botMsgDiv.remove();
+
+                if (aiResponse.type === 'follow-up') {
+                    // Create follow-up question container
+                    const followUpDiv = document.createElement('div');
+                    followUpDiv.className = 'message bot';
+                    
+                    // Add the question
+                    const questionDiv = document.createElement('div');
+                    questionDiv.textContent = aiResponse.question;
+                    questionDiv.style.marginBottom = '10px';
+                    followUpDiv.appendChild(questionDiv);
+                    
+                    // Add option buttons
+                    aiResponse.options.forEach(option => {
+                        const button = document.createElement('button');
+                        button.textContent = option;
+                        button.className = 'option-button';
+                        button.style.cssText = `
+                            display: block;
+                            width: 100%;
+                            margin: 5px 0;
+                            padding: 8px 12px;
+                            background: #4f8cff;
+                            color: white;
+                            border: none;
+                            border-radius: 6px;
+                            cursor: pointer;
+                            font-size: 0.9rem;
+                            text-align: left;
+                        `;
+                        
+                        // Add hover effect
+                        button.addEventListener('mouseenter', () => {
+                            button.style.background = '#2563eb';
+                        });
+                        button.addEventListener('mouseleave', () => {
+                            button.style.background = '#4f8cff';
+                        });
+                        
+                        // Handle button click
+                        button.addEventListener('click', () => {
+                            // Send the option as a message
+                            sendMessage(option);
+                        });
+                        
+                        followUpDiv.appendChild(button);
+                    });
+                    
+                    chatMessages.appendChild(followUpDiv);
+                    
+                } else if (aiResponse.type === 'summary') {
+                    // Display summary
+                    const summaryDiv = document.createElement('div');
+                    summaryDiv.className = 'message bot';
+                    summaryDiv.textContent = aiResponse.summary;
+                    chatMessages.appendChild(summaryDiv);
+                } else {
+                    // Fallback for unknown response types
+                    const fallbackDiv = document.createElement('div');
+                    fallbackDiv.className = 'message bot';
+                    fallbackDiv.textContent = data.response;
+                    chatMessages.appendChild(fallbackDiv);
+                }
+                
+            } catch (err) {
+                botMsgDiv.textContent = 'Sorry, there was an error connecting to the server.';
+            }
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        // Form submit handler
+        chatForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const message = userInput.value.trim();
+            if (!message) return;
+            
+            userInput.value = '';
+            sendMessage(message);
+        });
+    </script>
+</body>
+</html> 
