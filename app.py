@@ -21,19 +21,30 @@ app = Flask(__name__)
 line_bot_api = LineBotApi(os.environ.get('LINE_CHANNEL_ACCESS_TOKEN', ''))
 handler = WebhookHandler(os.environ.get('LINE_CHANNEL_SECRET', ''))
 
-@app.route("/", methods=['GET'])
+@app.route("/", methods=['GET', 'POST'])
 def health_check():
     """Health check endpoint for Render"""
+    if request.method == 'POST':
+        # Log POST requests to root for debugging
+        logging.warning(f"POST request received at root endpoint. Headers: {dict(request.headers)}")
     return jsonify({"status": "ok"}), 200
 
-@app.route("/callback", methods=['POST'])
+@app.route("/callback", methods=['POST', 'GET'])
 def callback():
+    """LINE webhook callback endpoint"""
+    if request.method == 'GET':
+        # Allow GET for webhook verification
+        return jsonify({"status": "ok"}), 200
+    
     signature = request.headers.get('X-Line-Signature', '')
     body = request.get_data(as_text=True)
+    
+    logging.info(f"Callback received. Method: {request.method}, Has signature: {bool(signature)}")
 
     try:
         handler.handle(body, signature)
-    except InvalidSignatureError:
+    except InvalidSignatureError as e:
+        logging.error(f"Invalid signature error: {e}")
         abort(400)
 
     return jsonify({"status": "ok"}), 200
