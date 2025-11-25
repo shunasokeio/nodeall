@@ -1,5 +1,5 @@
-from flask import Flask, request, abort
-# from flask import render_template, jsonify, session  # Commented out - website not used
+from flask import Flask, request, abort, jsonify
+# from flask import render_template, session  # Commented out - website not used
 import os
 import openai
 # from flask_cors import CORS  # Commented out - website not used
@@ -21,6 +21,11 @@ app = Flask(__name__)
 line_bot_api = LineBotApi(os.environ.get('LINE_CHANNEL_ACCESS_TOKEN', ''))
 handler = WebhookHandler(os.environ.get('LINE_CHANNEL_SECRET', ''))
 
+@app.route("/", methods=['GET'])
+def health_check():
+    """Health check endpoint for Render"""
+    return jsonify({"status": "ok"}), 200
+
 @app.route("/callback", methods=['POST'])
 def callback():
     signature = request.headers.get('X-Line-Signature', '')
@@ -31,7 +36,7 @@ def callback():
     except InvalidSignatureError:
         abort(400)
 
-    return 'OK'
+    return jsonify({"status": "ok"}), 200
 
 # --- Dorm Rules Chatbot Logic ---
 # Load the rulebook at startup
