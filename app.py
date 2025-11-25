@@ -23,10 +23,24 @@ handler = WebhookHandler(os.environ.get('LINE_CHANNEL_SECRET', ''))
 
 @app.route("/", methods=['GET', 'POST'])
 def health_check():
-    """Health check endpoint for Render"""
+    """Health check endpoint for Render and LINE webhook"""
     if request.method == 'POST':
-        # Log POST requests to root for debugging
-        logging.warning(f"POST request received at root endpoint. Headers: {dict(request.headers)}")
+        # Check if this is a LINE webhook request
+        signature = request.headers.get('X-Line-Signature', '')
+        if signature:
+            # This is a LINE webhook request, process it
+            body = request.get_data(as_text=True)
+            logging.info(f"LINE webhook received at root endpoint")
+            
+            try:
+                handler.handle(body, signature)
+            except InvalidSignatureError as e:
+                logging.error(f"Invalid signature error: {e}")
+                abort(400)
+            
+            return jsonify({"status": "ok"}), 200
+    
+    # GET request or non-LINE POST request
     return jsonify({"status": "ok"}), 200
 
 @app.route("/callback", methods=['POST', 'GET'])
