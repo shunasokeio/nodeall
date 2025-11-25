@@ -1,18 +1,37 @@
-from flask import Flask, render_template, request, jsonify, session
+from flask import Flask, request, abort
+# from flask import render_template, jsonify, session  # Commented out - website not used
 import os
 import openai
-from flask_cors import CORS
+# from flask_cors import CORS  # Commented out - website not used
 import time
 import random
 import logging
 from dotenv import load_dotenv
 from openai import APIConnectionError, APIError, APITimeoutError
 import re
+from linebot import LineBotApi, WebhookHandler
+from linebot.exceptions import InvalidSignatureError
+from linebot.models import MessageEvent, TextMessage, TextSendMessage
+
 load_dotenv()
 app = Flask(__name__)
-CORS(app)
+# CORS(app)  # Commented out - website not used
 
+# Initialize LINE Bot API with environment variables
+line_bot_api = LineBotApi(os.environ.get('LINE_CHANNEL_ACCESS_TOKEN', ''))
+handler = WebhookHandler(os.environ.get('LINE_CHANNEL_SECRET', ''))
 
+@app.route("/callback", methods=['POST'])
+def callback():
+    signature = request.headers.get('X-Line-Signature', '')
+    body = request.get_data(as_text=True)
+
+    try:
+        handler.handle(body, signature)
+    except InvalidSignatureError:
+        abort(400)
+
+    return 'OK'
 
 # --- Dorm Rules Chatbot Logic ---
 # Load the rulebook at startup
@@ -53,24 +72,53 @@ def call_gpt(model: str, prompt: str, sys_prompt: str, api_key: str) -> str:
             raise e
     raise Exception("Failed to get response from OpenAI API after multiple retries.")
 
-@app.route('/')
-def home():
-    return render_template('chat.html', chat_title="NODE GROWTH Dorm Rules Chatbot", initial_question="寮のルールについて質問してください。例: ゴミ出しのルールは？")
+# Website routes commented out - not using website functionality
+# @app.route('/')
+# def home():
+#     return render_template('chat.html', chat_title="NODE GROWTH Dorm Rules Chatbot", initial_question="寮のルールについて質問してください。例: ゴミ出しのルールは？")
 
-@app.route('/chat', methods=['POST'])
-def chat():
-    data = request.json
-    user_input = data.get('message', '')
-    # Always use the full rulebook
-    prompt = build_dorm_prompt(user_input, dorm_rules)
+# @app.route('/chat', methods=['POST'])
+# def chat():
+#     data = request.json
+#     user_input = data.get('message', '')
+#     # Always use the full rulebook
+#     prompt = build_dorm_prompt(user_input, dorm_rules)
+#     api_key = os.environ.get('OPENAI_API_KEY', '')
+#     model = 'gpt-4.1-mini-2025-04-14'
+#     system_prompt = "You are a helpful assistant for a student dormitory. Answer questions using the provided rules."
+#     try:
+#         ai_response = call_gpt(model, prompt, system_prompt, api_key)
+#         return jsonify({'response': ai_response})
+#     except Exception as e:
+#         return jsonify({'response': f"Sorry, there was an error: {str(e)}"}), 500
+
+# LINE Bot message handler
+@handler.add(MessageEvent, message=TextMessage)
+def handle_message(event):
+    user_message = event.message.text
+    
+    # Build prompt using the same function as web chat
+    prompt = build_dorm_prompt(user_message, dorm_rules)
     api_key = os.environ.get('OPENAI_API_KEY', '')
     model = 'gpt-4.1-mini-2025-04-14'
     system_prompt = "You are a helpful assistant for a student dormitory. Answer questions using the provided rules."
+    
     try:
+        # Get AI response using the same call_gpt function
         ai_response = call_gpt(model, prompt, system_prompt, api_key)
-        return jsonify({'response': ai_response})
+        
+        # Send response back to LINE
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(text=ai_response)
+        )
     except Exception as e:
-        return jsonify({'response': f"Sorry, there was an error: {str(e)}"}), 500
+        # Send error message to user
+        error_message = f"申し訳ございませんが、エラーが発生しました: {str(e)}"
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(text=error_message)
+        )
 
 if __name__ == '__main__':
     app.run(debug=True) 
