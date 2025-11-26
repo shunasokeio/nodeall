@@ -6,6 +6,8 @@ import openai
 import time
 import random
 import logging
+import threading
+import json
 from dotenv import load_dotenv
 from openai import APIConnectionError, APIError, APITimeoutError
 import re
@@ -122,9 +124,20 @@ def call_gpt(model: str, prompt: str, sys_prompt: str, api_key: str) -> str:
 #     except Exception as e:
 #         return jsonify({'response': f"Sorry, there was an error: {str(e)}"}), 500
 
-# LINE Bot message handler
-@handler.add(MessageEvent, message=TextMessage)
-def handle_message(event):
+# Helper function to get recipient ID from event source
+def get_recipient_id(event):
+    """Get the appropriate recipient ID based on source type"""
+    if hasattr(event.source, 'user_id'):
+        return event.source.user_id
+    elif hasattr(event.source, 'group_id'):
+        return event.source.group_id
+    elif hasattr(event.source, 'room_id'):
+        return event.source.room_id
+    return None
+
+# Process message asynchronously
+def process_message_async(event, reply_token):
+    """Process message in background thread"""
     user_message = event.message.text
     
     # Build prompt using the same function as web chat
@@ -133,22 +146,71 @@ def handle_message(event):
     model = 'gpt-4.1-mini-2025-04-14'
     system_prompt = "You are a helpful assistant for a student dormitory. Answer questions using the provided rules."
     
+    recipient_id = get_recipient_id(event)
+    
     try:
         # Get AI response using the same call_gpt function
         ai_response = call_gpt(model, prompt, system_prompt, api_key)
         
-        # Send response back to LINE
-        line_bot_api.reply_message(
-            event.reply_token,
-            TextSendMessage(text=ai_response)
-        )
+        # Try to use reply_message first (faster, but token may expire)
+        try:
+            line_bot_api.reply_message(
+                reply_token,
+                TextSendMessage(text=ai_response)
+            )
+        except Exception as reply_error:
+            # If reply_token expired, use push_message as fallback
+            logging.warning(f"Reply token expired, using push_message: {reply_error}")
+            if recipient_id:
+                line_bot_api.push_message(
+                    recipient_id,
+                    TextSendMessage(text=ai_response)
+                )
+            else:
+                raise Exception("Cannot send message: no valid recipient ID or reply token")
     except Exception as e:
         # Send error message to user
+        logging.error(f"Error processing message: {e}")
         error_message = f"申し訳ございませんが、エラーが発生しました: {str(e)}"
+        try:
+            # Try reply_message first
+            line_bot_api.reply_message(
+                reply_token,
+                TextSendMessage(text=error_message)
+            )
+        except Exception:
+            # Fallback to push_message
+            if recipient_id:
+                try:
+                    line_bot_api.push_message(
+                        recipient_id,
+                        TextSendMessage(text=error_message)
+                    )
+                except Exception as push_error:
+                    logging.error(f"Error sending error message: {push_error}")
+
+# LINE Bot message handler
+@handler.add(MessageEvent, message=TextMessage)
+def handle_message(event):
+    # Send immediate acknowledgment message
+    startup_message = "起動中です。少々お待ちください..."
+    try:
         line_bot_api.reply_message(
             event.reply_token,
-            TextSendMessage(text=error_message)
+            TextSendMessage(text=startup_message)
         )
+    except Exception as e:
+        logging.error(f"Error sending startup message: {e}")
+        # If we can't send startup message, still try to process the request
+        # but we'll need a new reply_token, so we'll use push_message
+    
+    # Store reply_token for async processing (it may expire, but we'll try)
+    reply_token = event.reply_token
+    
+    # Process message in background thread
+    thread = threading.Thread(target=process_message_async, args=(event, reply_token))
+    thread.daemon = True
+    thread.start()
 
 if __name__ == '__main__':
     app.run(debug=True) 
